@@ -32,7 +32,7 @@ def analyze(posts):
     conn = _snowflake_conn()
     try:
         for p in posts:
-            p.update(_cortex(conn, p["caption"]) if conn else _heuristic(p["caption"]))
+            p.update(_cortex(conn, p["caption"]) if conn else _heuristic(p["caption"], p.get("timestamp")))
     finally:
         if conn:
             conn.close()
@@ -51,16 +51,18 @@ def _cortex(conn, caption):
         return _heuristic(caption)
 
 
-def _heuristic(caption):
-    summary = re.split(r"(?<=[.!?])\s", caption.strip(), maxsplit=1)[0]
-    start = parse_date(caption)
+def _heuristic(caption, timestamp=None):
+    first_line = caption.strip().split("\n", 1)[0]
+    summary = re.split(r"(?<=[.!?])\s", first_line, maxsplit=1)[0]
+    posted = datetime.fromisoformat(timestamp.replace("Z", "+00:00")).replace(tzinfo=None) if timestamp else None
+    start = parse_date(caption, posted)
     event = None
-    if start and start > datetime.now():
-        location = re.search(r"Room \d+|(?:[A-Z]\w* )+(?:Center|Hall)", caption)
-        title = re.split(r"\s+(?:on\s+)?[A-Z][a-z]+ \d{1,2}, \d{4}", caption, maxsplit=1)[0]
+    if start and start.date() >= datetime.now().date():
+        location = re.search(r"📍\s*(.+)", caption) or re.search(r"Room \d+|(?:[A-Z]\w* )+(?:Center|Hall)", caption)
+        title = re.split(r"\s+(?:on\s+)?[A-Z][a-z]+ \d{1,2}(?:st|nd|rd|th)?,? \d{4}", summary, maxsplit=1)[0]
         event = {
-            "title": title.strip(" :,")[:60],
-            "start": start.strftime("%Y-%m-%dT%H:%M"),
-            "location": location.group(0) if location else "",
+            "title": title.strip(" :,!")[:60],
+            "start": start.strftime("%Y-%m-%dT%H:%M") if start.hour else start.strftime("%Y-%m-%d"),
+            "location": (location.group(1) if location.groups() else location.group(0)).strip() if location else "",
         }
     return {"summary": summary, "event": event}
