@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>InstaLetter – {{ "Sign up" if mode == "signup" else "Log in" }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: system-ui, sans-serif; background: #fafafa; color: #222; display: grid; place-items: center; min-height: 100vh; margin: 0; }
+    form { background: #fff; padding: 32px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); width: 320px; display: flex; flex-direction: column; gap: 12px; }
+    h1 { margin: 0 0 8px; }
+    input { padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; }
+    button { padding: 10px; border: 0; border-radius: 8px; background: #d62976; color: #fff; font-size: 16px; cursor: pointer; }
+    .error { color: #b00020; font-size: 14px; margin: 0; }
+    a { color: #d62976; }
+  </style>
+</head>
+<body>
+  <form method="post">
+    <h1>InstaLetter</h1>
+    {% for msg in get_flashed_messages() %}<p class="error">{{ msg }}</p>{% endfor %}
+    <input name="email" type="email" placeholder="Email" required autofocus value="{{ request.form.email or '' }}">
+    <input name="password" type="password" placeholder="Password" required minlength="8">
+    {% if mode == "signup" %}
+      <button>Create account</button>
+      <small>Already have an account? <a href="{{ url_for('auth.login') }}">Log in</a></small>
+    {% else %}
+      <button>Log in</button>
+      <small>New here? <a href="{{ url_for('auth.signup') }}">Sign up</a></small>
+    {% endif %}
+  </form>
+</body>
+</html>

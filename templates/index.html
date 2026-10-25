@@ -7,71 +7,105 @@
   <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
   <style>
     body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 0 auto; padding: 24px; background: #fafafa; color: #222; }
+    header { display: flex; justify-content: space-between; align-items: center; }
+    header form { margin: 0; }
     h1 { margin-bottom: 4px; }
-    form { display: flex; gap: 8px; margin: 16px 0 24px; }
+    #follow-form { display: flex; gap: 8px; margin: 16px 0 8px; }
     input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; }
     button { padding: 10px 18px; border: 0; border-radius: 8px; background: #d62976; color: #fff; font-size: 16px; cursor: pointer; }
-    button:disabled { opacity: .6; }
+    button.ghost { background: #eee; color: #222; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 24px; }
+    .chip { background: #fff; border: 1px solid #ddd; border-radius: 16px; padding: 4px 10px; font-size: 14px; }
+    .chip small { color: #888; }
+    .chip button { background: none; color: #888; padding: 0 0 0 6px; font-size: 14px; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
     .card { display: flex; gap: 12px; background: #fff; border-radius: 10px; padding: 12px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
     .card img { flex-shrink: 0; width: 80px; height: 80px; object-fit: cover; border-radius: 6px; }
     .user { font-weight: 600; color: #d62976; text-decoration: none; }
-    .tag { font-size: 12px; background: #fde7f1; color: #d62976; padding: 2px 6px; border-radius: 4px; margin-left: 6px; }
     #calendar { background: #fff; border-radius: 10px; padding: 12px; }
     @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
-  <h1>InstaLetter</h1>
-  <p>Enter Instagram usernames to get a newsletter of their posts and a calendar of their upcoming events.</p>
-  <form id="form">
-    <input id="usernames" placeholder="e.g. acmclub, hackclub, studentcouncil" value="acmclub, hackclub">
-    <button id="btn">Generate</button>
+  <header>
+    <h1>InstaLetter</h1>
+    <form method="post" action="{{ url_for('auth.logout') }}">{{ user.email }} <button class="ghost">Log out</button></form>
+  </header>
+  <p>Follow Instagram accounts to get a newsletter of their posts and a calendar of their upcoming events.</p>
+  <form id="follow-form">
+    <input id="username" placeholder="Instagram username, e.g. helloworldpurdue" required>
+    <button>Follow</button>
+    <button type="button" class="ghost" id="refresh">Refresh</button>
   </form>
+  <div class="chips" id="follows"></div>
   <div class="grid">
-    <section><h2>Newsletter</h2><div id="newsletter"><em>Nothing yet.</em></div></section>
+    <section><h2>Newsletter <small>(last 7 days)</small></h2><div id="newsletter"><em>Nothing yet.</em></div></section>
     <section><h2>Upcoming events</h2><div id="calendar"></div></section>
   </div>
 <script>
   const calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
     initialView: 'dayGridMonth', height: 'auto',
-    eventClick: (info) => alert(`${info.event.title}\n@${info.event.extendedProps.username}\n${info.event.extendedProps.location || ''}`),
+    eventClick: (info) => { info.jsEvent.preventDefault(); const p = info.event.extendedProps;
+      alert(`${info.event.title}\n${p.club}\n${p.location || ''}\n${p.url || ''}`); },
   });
   calendar.render();
 
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const api = async (path, opts) => {
+    const res = await fetch(path, opts);
+    if (res.status === 401) location.href = '/login';
+    if (res.status === 204) return null;
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error?.message || res.statusText);
+    return data;
+  };
 
-  document.getElementById('form').addEventListener('submit', async (e) => {
+  async function load() {
+    const [follows, news, events] = await Promise.all([api('/v1/me/follows'), api('/v1/newsletter'), api('/v1/events')]);
+    document.getElementById('follows').innerHTML = follows.items.map(f => `
+      <span class="chip">@${esc(f.username)} <small>${esc(f.ingestion_status)}</small>
+        <button data-id="${esc(f.account_id)}" title="Unfollow">✕</button></span>`).join('');
+    document.getElementById('newsletter').innerHTML = news.items.length ? news.items.map(p => `
+      <div class="card">
+        ${p.media_urls[0] ? `<img src="${esc(p.media_urls[0])}" referrerpolicy="no-referrer" alt="" onerror="this.remove()">` : ''}
+        <div>
+          <a class="user" href="${esc(p.permalink)}" target="_blank">@${esc(p.account)}</a>
+          <small>${new Date(p.posted_at).toLocaleDateString()}</small>
+          <div>${esc(p.summary || p.caption)}</div>
+        </div>
+      </div>`).join('') : '<em>No posts yet. Follow an account; scraping takes ~10s per account.</em>';
+    calendar.removeAllEvents();
+    events.items.forEach(ev => calendar.addEvent({
+      title: ev.title, start: ev.date_precision === 'exact' ? ev.start_at : ev.local_start_date,
+      allDay: ev.date_precision !== 'exact',
+      extendedProps: {club: ev.club.name, location: ev.location_name, url: ev.source_posts[0]?.url},
+    }));
+    return follows.items.some(f => f.ingestion_status === 'pending');
+  }
+
+  async function loadAndPoll() {
+    try { if (await load()) setTimeout(loadAndPoll, 4000); } catch (err) { alert(err.message); }
+  }
+
+  document.getElementById('follow-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const btn = document.getElementById('btn');
-    btn.disabled = true; btn.textContent = 'Scraping...';
+    const input = document.getElementById('username');
     try {
-      const res = await fetch('/api/newsletter', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({usernames: document.getElementById('usernames').value}),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      document.getElementById('newsletter').innerHTML = data.posts.map(p => `
-        <div class="card">
-          <img src="${esc(p.image)}" referrerpolicy="no-referrer" alt="">
-          <div>
-            <a class="user" href="${esc(p.url)}" target="_blank">@${esc(p.username)}</a>
-            ${p.event ? '<span class="tag">event</span>' : ''}
-            <div>${esc(p.summary)}</div>
-          </div>
-        </div>`).join('');
-      calendar.removeAllEvents();
-      data.events.forEach(ev => calendar.addEvent({
-        title: `@${ev.username}: ${ev.title}`, start: ev.start,
-        extendedProps: {username: ev.username, location: ev.location},
-      }));
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      btn.disabled = false; btn.textContent = 'Generate';
-    }
+      await api(`/v1/me/follows/${encodeURIComponent(input.value.trim())}`, {method: 'PUT'});
+      input.value = '';
+      loadAndPoll();
+    } catch (err) { alert(err.message); }
   });
+  document.getElementById('follows').addEventListener('click', async (e) => {
+    if (!e.target.dataset.id) return;
+    await api(`/v1/me/follows/${e.target.dataset.id}`, {method: 'DELETE'});
+    load();
+  });
+  document.getElementById('refresh').addEventListener('click', async () => {
+    await api('/v1/me/refresh', {method: 'POST'});
+    setTimeout(loadAndPoll, 3000);
+  });
+  loadAndPoll();
 </script>
 </body>
 </html>

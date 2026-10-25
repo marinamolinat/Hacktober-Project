@@ -13,7 +13,7 @@ For this handoff, use these decisions without blocking on framework choices:
 | Decision | v1 contract |
 |---|---|
 | Database | Snowflake standard tables in `HACKATHON_DB.APP`; all application data there. |
-| Auth | Existing backend auth provider; store its namespaced subject. No app passwords in Snowflake. |
+| Auth | Email + password, implemented in the Flask backend (`auth.py`). No OAuth/external auth provider. `USERS.PASSWORD_HASH` stores a salted werkzeug hash (scrypt/pbkdf2), never the plain-text password. The browser holds only a signed Flask session cookie containing `USER_ID`. |
 | Follows | Users follow Instagram accounts. Accounts optionally map to curated Purdue clubs. Arbitrary accounts can appear in newsletters; only mapped clubs publish club events. |
 | Retrieval and agent | Cortex Search manages event embeddings; Cortex Agent `EVENT_ASSISTANT` uses the event search service. No separate vector database or manually maintained embedding columns. |
 | Personalization | Backend combines follows, known tags, free-text preferences, current event facts, and search rank. The model proposes interpretations; deterministic checks decide validity and eligibility. |
@@ -59,7 +59,7 @@ One teammate may fill several lanes. Nobody independently renames columns, chang
 
 | # / table | Key and relationships | Columns / purpose |
 |---|---|---|
-| 1. `USERS` | PK `USER_ID`; natural unique `AUTH_SUBJECT` | `USER_ID`, `AUTH_SUBJECT` (`issuer:subject`), `DISPLAY_NAME?`, `EMAIL?`, `TIMEZONE`, `CREATED_AT`, `UPDATED_AT`, `DELETED_AT?`. Email is optional and not a login key. |
+| 1. `USERS` | PK `USER_ID`; natural unique `EMAIL` (and `AUTH_SUBJECT`) | `USER_ID`, `AUTH_SUBJECT` (always `local:<email>`; kept so an auth provider can be added later), `EMAIL` (lowercased, required, the login key), `PASSWORD_HASH` (werkzeug hash; plain text is never stored), `DISPLAY_NAME?`, `TIMEZONE`, `CREATED_AT`, `UPDATED_AT`, `DELETED_AT?`. Sign-up checks for an existing email inside the insert transaction because Snowflake does not enforce `UNIQUE`. |
 | 2. `USER_PREFERENCES` | PK/FK `USER_ID → USERS`; exactly one row per active app user | `PREFERENCE_TEXT`, `INTEREST_TAG_IDS` (array of active tag-ID strings), `EXCLUDED_TAG_IDS` (same), `FOLLOWED_ONLY`, `FREE_ONLY`, `HORIZON_DAYS` (1–90, default 30), `VERSION`, `UPDATED_AT`. User creation creates an empty default preference row in the same transaction. |
 | 3. `USER_FOLLOWS` | Composite PK `(USER_ID, ACCOUNT_ID)`; FKs to `USERS` and `INSTAGRAM_ACCOUNTS` | `USER_ID`, `ACCOUNT_ID`, `CREATED_AT`. Unfollow deletes this relationship; never deletes the shared account. |
 
@@ -288,7 +288,7 @@ All public endpoints require the backend's verified user session. `/me` identity
 
 | Method / route | Request | Response / behavior |
 |---|---|---|
-| `GET /v1/me` | Session only | `{user_id,display_name,timezone}`; create user + default preferences on first authenticated request. |
+| `GET /v1/me` | Session only | `{user_id,email,display_name,timezone}`. The user and default preferences are created at sign-up (`POST /signup`); `POST /login` and `POST /logout` manage the Flask session. |
 | `GET /v1/me/preferences` | Session only | Saved text, structured fields and `version`. |
 | `POST /v1/preferences/preview` | `{preference_text}` | Nonpersistent proposal and unmatched terms (§5). |
 | `PUT /v1/me/preferences` | `{preference_text,interest_tag_ids,excluded_tag_ids,followed_only,free_only,horizon_days,expected_version}` | Validated saved preferences with incremented version; full replacement, no ambiguous partial merge. |
@@ -430,7 +430,7 @@ The private key is encrypted and prompts for a passphrase. Put only the public k
 | `SNOWFLAKE_SEARCH_SERVICE`, `SNOWFLAKE_AGENT` | `HACKATHON_DB.APP.EVENT_SEARCH`, `HACKATHON_DB.APP.EVENT_ASSISTANT`. |
 | `SNOWFLAKE_EXTRACT_MODEL`, `SNOWFLAKE_SUMMARY_MODEL` | Models tested in this account; extraction version records model/prompt versions. |
 | `INTERNAL_INGEST_TOKEN`, `CURSOR_SIGNING_SECRET` | Separate random backend secrets for worker requests and cursors. |
-| Existing auth-provider variables | Session verification keys/configuration belonging to the chosen backend auth system. |
+| `SECRET_KEY` | Random string used by Flask to sign the session cookie. Required in any shared deployment. |
 
 Snowflake connector key-pair login does not automatically create a REST bearer token. For direct Search/Agent REST requests, implement Snowflake key-pair JWT authentication (or configured OAuth); build the JWT with the proper account/user identifiers and public-key fingerprint. Send `Authorization: Bearer <short-lived-jwt>`, `X-Snowflake-Authorization-Token-Type: KEYPAIR_JWT`, and `X-Snowflake-Role: HACKATHON_API` for API-process requests. Never use the private key string itself as the bearer token. The chosen REST role must have agent/service privileges; the connector's active role is not automatically carried into a separate HTTP request. [Agent authentication and role context](https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents-setup).
 
@@ -513,6 +513,6 @@ These checks are required integration work, **not results already obtained**. Us
 
 Prepared locally: this spec, 11-table DDL, scoped grants, bootstrap, Search/Agent definitions, read-only smoke queries, and a service-user key template. Local checks can confirm file/table/column/contract consistency; they cannot validate an account's parser, privileges, region support, enabled models, index readiness, latency or billing.
 
-Still required in your environment: run the checklist, choose enabled model(s), register public keys, configure existing auth, seed labeled fixtures or ingest approved live posts, and execute the acceptance matrix. No Snowflake resources, users or credentials were created by producing this handoff.
+Still required in your environment: run the checklist, choose enabled model(s), register public keys, set `SECRET_KEY`, seed labeled fixtures or ingest approved live posts, and execute the acceptance matrix. No Snowflake resources, users or credentials were created by producing this handoff.
 
 Official Snowflake sources above were checked on **2026-10-25**. Their URLs are included at the relevant setup/behavior contracts so teammates can verify syntax and account-specific availability without depending on this conversation.
