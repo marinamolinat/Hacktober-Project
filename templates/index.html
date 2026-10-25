@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>InstaLetter</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 0 auto; padding: 24px; background: #fafafa; color: #222; }
+    h1 { margin-bottom: 4px; }
+    form { display: flex; gap: 8px; margin: 16px 0 24px; }
+    input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; }
+    button { padding: 10px 18px; border: 0; border-radius: 8px; background: #d62976; color: #fff; font-size: 16px; cursor: pointer; }
+    button:disabled { opacity: .6; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .card { display: flex; gap: 12px; background: #fff; border-radius: 10px; padding: 12px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .card img { width: 80px; height: 80px; object-fit: cover; border-radius: 6px; }
+    .user { font-weight: 600; color: #d62976; text-decoration: none; }
+    .tag { font-size: 12px; background: #fde7f1; color: #d62976; padding: 2px 6px; border-radius: 4px; margin-left: 6px; }
+    #calendar { background: #fff; border-radius: 10px; padding: 12px; }
+    @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>InstaLetter</h1>
+  <p>Enter Instagram usernames to get a newsletter of their posts and a calendar of their upcoming events.</p>
+  <form id="form">
+    <input id="usernames" placeholder="e.g. acmclub, hackclub, studentcouncil" value="acmclub, hackclub">
+    <button id="btn">Generate</button>
+  </form>
+  <div class="grid">
+    <section><h2>Newsletter</h2><div id="newsletter"><em>Nothing yet.</em></div></section>
+    <section><h2>Upcoming events</h2><div id="calendar"></div></section>
+  </div>
+<script>
+  const calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
+    initialView: 'dayGridMonth', height: 'auto',
+    eventClick: (info) => alert(`${info.event.title}\n@${info.event.extendedProps.username}\n${info.event.extendedProps.location || ''}`),
+  });
+  calendar.render();
+
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  document.getElementById('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('btn');
+    btn.disabled = true; btn.textContent = 'Scraping...';
+    try {
+      const res = await fetch('/api/newsletter', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({usernames: document.getElementById('usernames').value}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      document.getElementById('newsletter').innerHTML = data.posts.map(p => `
+        <div class="card">
+          <img src="${esc(p.image)}" referrerpolicy="no-referrer" alt="">
+          <div>
+            <a class="user" href="${esc(p.url)}" target="_blank">@${esc(p.username)}</a>
+            ${p.event ? '<span class="tag">event</span>' : ''}
+            <div>${esc(p.summary)}</div>
+          </div>
+        </div>`).join('');
+      calendar.removeAllEvents();
+      data.events.forEach(ev => calendar.addEvent({
+        title: `@${ev.username}: ${ev.title}`, start: ev.start,
+        extendedProps: {username: ev.username, location: ev.location},
+      }));
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Generate';
+    }
+  });
+</script>
+</body>
+</html>
