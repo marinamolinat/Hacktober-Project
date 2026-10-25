@@ -282,7 +282,7 @@ def newsletter(user_id, days=7, limit=20):
     } for r in rows]
 
 
-def events_feed(user_id, limit=20):
+def events_feed(user_id, limit=20, from_date=None, through_date=None):
     """Simplified §6.1: published events with a live primary source, date-gated,
     score = 50*F + 5*U (no tags/search yet), tie-break START_AT, EVENT_ID."""
     prefs = get_preferences(user_id) or {"horizon_days": 30, "followed_only": False}
@@ -310,9 +310,13 @@ def events_feed(user_id, limit=20):
         start = as_dt(ev["start_at"])
         upcoming = start >= now_utc if ev["date_precision"] == "exact" else local_date >= today
         days_until = (local_date - today).days
-        if not upcoming or days_until > prefs["horizon_days"] or (prefs["followed_only"] and not ev["followed"]):
+        lo = from_date or today
+        hi = through_date or today + timedelta(days=prefs["horizon_days"])
+        if (from_date is None and not upcoming) or not lo <= local_date <= hi:
             continue
-        score = 50 * ev["followed"] + 5 * (1 / (1 + days_until))
+        if prefs["followed_only"] and not ev["followed"]:
+            continue
+        score = 50 * ev["followed"] + (5 / (1 + days_until) if upcoming else 0)
         items.append((-score, iso(start), ev["event_id"], {
             "event_id": ev["event_id"], "club": {"club_id": ev["club_id"], "name": ev["club_name"]},
             "title": ev["title"], "description": ev["description"], "start_at": iso(start), "end_at": iso(ev["end_at"]),
@@ -321,7 +325,8 @@ def events_feed(user_id, limit=20):
             "is_free": None if ev["is_free"] is None else bool(ev["is_free"]),
             "price_amount": None if ev["price_amount"] is None else f"{float(ev['price_amount']):.2f}",
             "price_currency": ev["price_currency"], "registration_url": ev["registration_url"], "tags": [],
-            "status": ev["status"], "reasons": ["followed_account", "upcoming"] if ev["followed"] else ["upcoming"],
+            "status": ev["status"], "is_past": not upcoming,
+            "reasons": (["followed_account"] if ev["followed"] else []) + (["upcoming"] if upcoming else []),
             "source_posts": ev["sources"], "updated_at": iso(ev["updated_at"]),
         }))
     items.sort(key=lambda t: t[:3])

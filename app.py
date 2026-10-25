@@ -1,6 +1,7 @@
 import logging
 import os
 import uuid
+from datetime import date
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request
@@ -97,9 +98,14 @@ def newsletter():
 @auth.login_required
 def events():
     limit = int_arg("limit", 20, 1, 50)
-    if limit is None:
-        return error(400, "invalid_input", "limit must be 1-50.")
-    items = store.events_feed(auth.current_user_id(), limit)
+    try:
+        dates = [date.fromisoformat(request.args[k]) if request.args.get(k) else None
+                 for k in ("from_date", "through_date")]
+    except ValueError:
+        dates = None
+    if limit is None or dates is None:
+        return error(400, "invalid_input", "limit must be 1-50; dates must be YYYY-MM-DD.")
+    items = store.events_feed(auth.current_user_id(), limit, *dates)
     return jsonify(items=items, next_cursor=None, meta={"search_degraded": True, "source_mode": "live", "warnings": []})
 
 

@@ -40,7 +40,7 @@
   <div class="chips" id="follows"></div>
   <div class="grid">
     <section><h2>Newsletter <small>(last 7 days)</small></h2><div id="newsletter"><em>Nothing yet.</em></div></section>
-    <section><h2>Upcoming events</h2><div id="calendar"></div></section>
+    <section><h2>Events <small>(past ones in grey)</small></h2><div id="calendar"></div></section>
   </div>
 <script>
   const calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
@@ -50,6 +50,7 @@
   });
   calendar.render();
 
+  const shiftDate = (days) => { const d = new Date(); d.setDate(d.getDate() + days); return d.toLocaleDateString('en-CA'); };
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const api = async (path, opts) => {
     const res = await fetch(path, opts);
@@ -61,7 +62,7 @@
   };
 
   async function load() {
-    const [follows, news, events] = await Promise.all([api('/v1/me/follows'), api('/v1/newsletter'), api('/v1/events')]);
+    const [follows, news, events] = await Promise.all([api('/v1/me/follows'), api('/v1/newsletter'), api(`/v1/events?limit=50&from_date=${shiftDate(-60)}&through_date=${shiftDate(90)}`)]);
     document.getElementById('follows').innerHTML = follows.items.map(f => `
       <span class="chip">@${esc(f.username)} <small>${esc(f.ingestion_status)}</small>
         <button data-id="${esc(f.account_id)}" title="Unfollow">✕</button></span>`).join('');
@@ -78,6 +79,7 @@
     events.items.forEach(ev => calendar.addEvent({
       title: ev.title, start: ev.date_precision === 'exact' ? ev.start_at : ev.local_start_date,
       allDay: ev.date_precision !== 'exact',
+      color: ev.is_past ? '#bbb' : '#d62976',
       extendedProps: {club: ev.club.name, location: ev.location_name, url: ev.source_posts[0]?.url},
     }));
     return follows.items.some(f => f.ingestion_status === 'pending');
