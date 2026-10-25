@@ -14,12 +14,6 @@ Sign up at `/signup` (email + password), follow accounts, and the newsletter/cal
 
 The data model is the 11-table schema in [`specs.md`](specs.md) §2, DDL in [`snowflake/002_schema.sql`](snowflake/002_schema.sql). With `SNOWFLAKE_ACCOUNT` blank it runs against a local SQLite copy (`local.db`); with it set, run `python manage.py init-db` once as the owner role.
 
-Only accounts mapped to a verified club publish calendar events (specs §2.5). Map one with:
-
-```bash
-python manage.py map-club helloworldpurdue "Hello World Purdue"
-```
-
 With no creds it uses mock posts and a regex-based summarizer, so the UI works out of the box.
 
 - `SCRAPER=instaloader` → real posts via [Instaloader](https://instaloader.github.io/) (free; Instagram rate-limits anonymous use, so log in a burner account once with `instaloader --login <user>` and set `IG_USERNAME`)
@@ -32,7 +26,7 @@ With no creds it uses mock posts and a regex-based summarizer, so the UI works o
 - `auth.py` – `/signup`, `/login`, `/logout` (passwords hashed in `USERS.PASSWORD_HASH`)
 - `db.py` / `store.py` – Snowflake (or SQLite) connection and queries for the spec schema
 - `ingest.py` – background scrape → `POSTS` → extraction → `EVENTS`
-- `manage.py` – `init-db`, `map-club`, `ingest`
+- `manage.py` – `init-db`, `ingest`
 - `scraper.py` – Instaloader / Apify / mock backends
 - `ai.py` – Cortex prompt (JSON summary + events) with heuristic fallback
 - `dates.py` – tiny date parser for the fallback

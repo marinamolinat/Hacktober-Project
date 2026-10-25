@@ -1,6 +1,5 @@
 """Usage:
   python manage.py init-db                       # create the 11 tables (snowflake/002_schema.sql)
-  python manage.py map-club <username> "<Club>"  # curated: map an IG account to a verified club
   python manage.py ingest <username>             # scrape + extract one account now
 """
 import sys
@@ -18,9 +17,6 @@ if __name__ == "__main__":
     if cmd == "init-db":
         db.init_schema()
         print("schema ready")
-    elif cmd == "map-club" and len(args) == 2:
-        club_id, account_id = store.map_club(store.normalize_handle(args[0]), args[1])
-        print(f"mapped @{args[0]} → club {club_id}; published {store.sync_events(account_id)} new events")
     elif cmd == "ingest" and len(args) == 1:
         account = store.get_or_create_account(store.normalize_handle(args[0]))
         ingest.ingest_account(account["account_id"], account["username"])

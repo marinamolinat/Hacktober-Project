@@ -143,21 +143,24 @@ def set_ingestion_state(account_id, status, error=None, success=False):
         (status, (error or "")[:2000] or None, ts, success, ts, ts, account_id))
 
 
-def map_club(username, club_name):
-    """Curated action: create/reuse a verified club and map an account to it."""
-    account = get_or_create_account(username)
-    slug = re.sub(r"[^a-z0-9]+", "-", club_name.lower()).strip("-")
-    ts = now()
+def club_for_account(account_id):
+    """Every account is its own club; created on first use."""
     with db.transaction():
-        club = db.one("SELECT CLUB_ID FROM CLUBS WHERE SLUG = %s", (slug,))
-        club_id = club["club_id"] if club else new_id()
+        row = db.one(
+            "SELECT c.CLUB_ID, c.NAME, a.USERNAME FROM INSTAGRAM_ACCOUNTS a LEFT JOIN CLUBS c ON c.CLUB_ID = a.CLUB_ID "
+            "WHERE a.ACCOUNT_ID = %s", (account_id,))
+        if row["club_id"]:
+            return {"club_id": row["club_id"], "name": row["name"]}
+        club = db.one("SELECT CLUB_ID, NAME FROM CLUBS WHERE SLUG = %s", (row["username"],))
+        ts = now()
         if not club:
+            club = {"club_id": new_id(), "name": row["username"]}
             db.query(
-                "INSERT INTO CLUBS (CLUB_ID, SLUG, NAME, IS_VERIFIED, IS_ACTIVE, CREATED_AT, UPDATED_AT) "
-                "VALUES (%s, %s, %s, TRUE, TRUE, %s, %s)", (club_id, slug, club_name, ts, ts))
+                "INSERT INTO CLUBS (CLUB_ID, SLUG, NAME, IS_ACTIVE, CREATED_AT, UPDATED_AT) "
+                "VALUES (%s, %s, %s, TRUE, %s, %s)", (club["club_id"], row["username"], row["username"], ts, ts))
         db.query("UPDATE INSTAGRAM_ACCOUNTS SET CLUB_ID = %s, UPDATED_AT = %s WHERE ACCOUNT_ID = %s",
-                 (club_id, ts, account["account_id"]))
-    return club_id, account["account_id"]
+                 (club["club_id"], ts, account_id))
+        return club
 
 
 # Posts -------------------------------------------------------------------
@@ -215,15 +218,13 @@ def _dedupe_key(club_id, local_date, local_time, title):
 
 
 def sync_events(account_id):
-    """Publish events from processed posts of an account mapped to an active, verified club (§2.5, §3.2)."""
-    club = db.one(
-        "SELECT c.CLUB_ID, c.NAME FROM INSTAGRAM_ACCOUNTS a JOIN CLUBS c ON c.CLUB_ID = a.CLUB_ID "
-        "WHERE a.ACCOUNT_ID = %s AND c.IS_ACTIVE AND c.IS_VERIFIED", (account_id,))
-    if not club:
-        return 0
+    """Publish events from processed posts of an account (§2.5, §3.2)."""
     posts = db.query(
         "SELECT POST_ID, CONTENT_HASH, EXTRACTED_PAYLOAD FROM POSTS WHERE ACCOUNT_ID = %s "
         "AND EXTRACTION_STATUS = 'processed' AND DELETED_AT IS NULL", (account_id,))
+    if not any((as_json(p["extracted_payload"]) or {}).get("events") for p in posts):
+        return 0
+    club = club_for_account(account_id)
     created = 0
     for post in posts:
         for ev in (as_json(post["extracted_payload"]) or {}).get("events", []):
@@ -291,7 +292,7 @@ def events_feed(user_id, limit=20):
         "e.STATUS, e.UPDATED_AT, c.CLUB_ID, c.NAME AS CLUB_NAME, s.POST_ID, p.PERMALINK, s.IS_PRIMARY, "
         "CASE WHEN EXISTS (SELECT 1 FROM USER_FOLLOWS f JOIN INSTAGRAM_ACCOUNTS a ON a.ACCOUNT_ID = f.ACCOUNT_ID "
         "  WHERE f.USER_ID = %s AND (a.CLUB_ID = e.CLUB_ID OR a.ACCOUNT_ID = p.ACCOUNT_ID)) THEN 1 ELSE 0 END AS FOLLOWED "
-        "FROM EVENTS e JOIN CLUBS c ON c.CLUB_ID = e.CLUB_ID AND c.IS_ACTIVE AND c.IS_VERIFIED "
+        "FROM EVENTS e JOIN CLUBS c ON c.CLUB_ID = e.CLUB_ID AND c.IS_ACTIVE "
         "JOIN EVENT_SOURCES s ON s.EVENT_ID = e.EVENT_ID JOIN POSTS p ON p.POST_ID = s.POST_ID AND p.DELETED_AT IS NULL "
         "WHERE e.STATUS = 'published' AND e.DATE_PRECISION <> 'unknown'", (user_id,))
     now_utc = datetime.now(timezone.utc)
