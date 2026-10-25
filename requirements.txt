@@ -2,4 +2,5 @@ flask
 requests
 python-dotenv
 snowflake-connector-python
+snowflake-core>=0.8.0
 instaloader

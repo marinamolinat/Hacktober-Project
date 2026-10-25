@@ -1,3 +1,10 @@
 .env
 __pycache__/
 .venv/
+
+.local/
+.runtime/
+*.p8
+*.pem
+
+/snowflake/CONNECT.sql
