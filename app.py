@@ -19,11 +19,17 @@ def newsletter():
     usernames = [u.strip().lstrip("@") for u in raw.replace("\n", ",").split(",") if u.strip()]
     if not usernames:
         return jsonify(error="Enter at least one username"), 400
-    posts = ai.analyze(scraper.scrape(usernames))
-    events = [
-        {**p["event"], "username": p["username"], "url": p["url"]}
-        for p in posts if p.get("event")
-    ]
+    try:
+        posts = scraper.scrape(usernames)
+    except Exception as e:
+        return jsonify(error=f"Scraping failed: {e}"), 502
+    posts = ai.analyze(posts)
+    events = {}
+    for p in posts:
+        if p.get("event"):
+            key = (p["username"], p["event"]["start"][:10])
+            events.setdefault(key, {**p["event"], "username": p["username"], "url": p["url"]})
+    events = list(events.values())
     return jsonify(posts=posts, events=events)
 
 

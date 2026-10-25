@@ -1,19 +1,48 @@
 import os
 import random
 from datetime import datetime, timedelta, timezone
+from itertools import islice
 
 import requests
 
 APIFY_URL = "https://api.apify.com/v2/acts/apify~instagram-post-scraper/run-sync-get-dataset-items"
 
 
-def scrape(usernames, limit=5):
-    token = os.getenv("APIFY_TOKEN")
-    if not token:
-        return mock_posts(usernames, limit)
+def scrape(usernames, limit=None):
+    limit = limit or int(os.getenv("POSTS_PER_USER", "8"))
+    backend = os.getenv("SCRAPER") or ("apify" if os.getenv("APIFY_TOKEN") else "mock")
+    fetch = {"instaloader": instaloader_posts, "apify": apify_posts}.get(backend, mock_posts)
+    posts = [p for p in fetch(usernames, limit) if not p.pop("pinned", False)]
+    return sorted(posts, key=lambda p: p["timestamp"] or "", reverse=True)
+
+
+def instaloader_posts(usernames, limit):
+    import instaloader
+
+    loader = instaloader.Instaloader(download_videos=False, save_metadata=False, max_connection_attempts=1)
+    ig_user = os.getenv("IG_USERNAME")
+    if ig_user:
+        # Create once with: instaloader --login <IG_USERNAME>
+        loader.load_session_from_file(ig_user, os.getenv("IG_SESSIONFILE") or None)
+    posts = []
+    for u in usernames:
+        profile = instaloader.Profile.from_username(loader.context, u)
+        for p in islice(profile.get_posts(), limit):
+            posts.append({
+                "username": u,
+                "caption": p.caption or "",
+                "image": p.url,
+                "url": f"https://www.instagram.com/p/{p.shortcode}/",
+                "timestamp": p.date_utc.isoformat(),
+                "pinned": p.is_pinned,
+            })
+    return posts
+
+
+def apify_posts(usernames, limit):
     resp = requests.post(
         APIFY_URL,
-        params={"token": token},
+        params={"token": os.getenv("APIFY_TOKEN")},
         json={"username": usernames, "resultsLimit": limit},
         timeout=300,
     )
@@ -25,6 +54,7 @@ def scrape(usernames, limit=5):
             "image": p.get("displayUrl"),
             "url": p.get("url"),
             "timestamp": p.get("timestamp"),
+            "pinned": p.get("isPinned", False),
         }
         for p in resp.json()
     ]

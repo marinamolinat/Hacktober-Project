@@ -12,13 +12,14 @@ python app.py          # http://localhost:5000
 
 With no creds it uses mock posts and a regex-based summarizer, so the UI works out of the box.
 
-- `APIFY_TOKEN` set → real Instagram posts
+- `SCRAPER=instaloader` → real posts via [Instaloader](https://instaloader.github.io/) (free; Instagram rate-limits anonymous use, so log in a burner account once with `instaloader --login <user>` and set `IG_USERNAME`)
+- `APIFY_TOKEN` set (or `SCRAPER=apify`) → real posts via Apify
 - `SNOWFLAKE_*` set → summaries/events via `SNOWFLAKE.CORTEX.COMPLETE`
 
 ## Files
 
 - `app.py` – Flask routes (`/`, `POST /api/newsletter`)
-- `scraper.py` – Apify call + mock data
+- `scraper.py` – Instaloader / Apify / mock backends
 - `ai.py` – Cortex prompt (JSON summary + event) with heuristic fallback
 - `dates.py` – tiny date parser for the fallback
 - `templates/index.html` – newsletter + FullCalendar UI
