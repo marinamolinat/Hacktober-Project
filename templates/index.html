@@ -2,76 +2,90 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>InstaLetter</title>
+  <title>Purdue Printed · Your campus, caught up</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 0 auto; padding: 24px; background: #fafafa; color: #222; }
-    h1 { margin-bottom: 4px; }
-    form { display: flex; gap: 8px; margin: 16px 0 24px; }
-    input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; }
-    button { padding: 10px 18px; border: 0; border-radius: 8px; background: #d62976; color: #fff; font-size: 16px; cursor: pointer; }
-    button:disabled { opacity: .6; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
-    .card { display: flex; gap: 12px; background: #fff; border-radius: 10px; padding: 12px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-    .card img { flex-shrink: 0; width: 80px; height: 80px; object-fit: cover; border-radius: 6px; }
-    .user { font-weight: 600; color: #d62976; text-decoration: none; }
-    .tag { font-size: 12px; background: #fde7f1; color: #d62976; padding: 2px 6px; border-radius: 4px; margin-left: 6px; }
-    #calendar { background: #fff; border-radius: 10px; padding: 12px; }
-    @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
-  </style>
+  <meta name="theme-color" content="#8056c6">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  <script defer src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
 <body>
-  <h1>InstaLetter</h1>
-  <p>Enter Instagram usernames to get a newsletter of their posts and a calendar of their upcoming events.</p>
-  <form id="form">
-    <input id="usernames" placeholder="e.g. acmclub, hackclub, studentcouncil" value="acmclub, hackclub">
-    <button id="btn">Generate</button>
-  </form>
-  <div class="grid">
-    <section><h2>Newsletter</h2><div id="newsletter"><em>Nothing yet.</em></div></section>
-    <section><h2>Upcoming events</h2><div id="calendar"></div></section>
-  </div>
-<script>
-  const calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
-    initialView: 'dayGridMonth', height: 'auto',
-    eventClick: (info) => alert(`${info.event.title}\n@${info.event.extendedProps.username}\n${info.event.extendedProps.location || ''}`),
-  });
-  calendar.render();
-
-  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-
-  document.getElementById('form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const btn = document.getElementById('btn');
-    btn.disabled = true; btn.textContent = 'Scraping...';
-    try {
-      const res = await fetch('/api/newsletter', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({usernames: document.getElementById('usernames').value}),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      document.getElementById('newsletter').innerHTML = data.posts.map(p => `
-        <div class="card">
-          <img src="${esc(p.image)}" referrerpolicy="no-referrer" alt="">
+  <a class="skip-link" href="#feed">Skip to your feed</a>
+  <main class="page-shell">
+    <div class="paper-frame">
+      <div class="paper">
+        <header class="site-header">
           <div>
-            <a class="user" href="${esc(p.url)}" target="_blank">@${esc(p.username)}</a>
-            ${p.event ? '<span class="tag">event</span>' : ''}
-            <div>${esc(p.summary)}</div>
+            <a class="wordmark" href="/" aria-label="Purdue Printed home">Purdue Printed</a>
+            <p class="header-note">A quick compiler of your Purdue Insta feed.</p>
           </div>
-        </div>`).join('');
-      calendar.removeAllEvents();
-      data.events.forEach(ev => calendar.addEvent({
-        title: `@${ev.username}: ${ev.title}`, start: ev.start,
-        extendedProps: {username: ev.username, location: ev.location},
-      }));
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      btn.disabled = false; btn.textContent = 'Generate';
-    }
-  });
-</script>
+          <span class="brand-seal" aria-hidden="true">P</span>
+        </header>
+        <div class="paper-meta"><span>Purdue University · West Lafayette</span><span>Clubs, posts &amp; events</span></div>
+        <section class="following-section" aria-labelledby="following-heading">
+          <div class="section-heading"><h2 id="following-heading">Tracked Instagram club handles</h2><span id="follow-count" class="count">0</span></div>
+          <p class="help-text">Follow an account to bring its public posts into your digest.</p>
+          <ul id="following-list" class="following-list"><li class="help-text">Loading accounts…</li></ul>
+          <form id="follow-form" class="follow-form">
+            <label class="visually-hidden" for="username">Instagram username</label>
+            <div class="username-input"><span aria-hidden="true">@</span><input id="username" name="username" placeholder="Add a handle" maxlength="30" autocomplete="off" autocapitalize="none" spellcheck="false" required></div>
+            <button id="follow-button" class="button primary" type="submit">Follow account</button>
+          </form>
+        </section>
+        <details class="preferences-drawer">
+          <summary><span>Make this digest yours</span><span class="summary-detail">Interests &amp; filters</span></summary>
+          <section class="settings-section preferences-section" aria-labelledby="preferences-heading">
+            <h2 id="preferences-heading">Your preferences</h2><p class="help-text">Tell us what you’d like to find.</p>
+            <form id="preferences-form">
+              <label for="preference-text">What are you into?</label>
+              <textarea id="preference-text" name="preference_text" rows="3" maxlength="2000" placeholder="AI workshops, beginner friendly clubs, and meeting new people…"></textarea>
+              <fieldset class="tag-fieldset"><legend>Interests</legend><div id="interest-tags" class="tag-options"><span class="help-text">Loading interests…</span></div></fieldset>
+              <details class="avoid-details"><summary>Topics to avoid</summary><div id="excluded-tags" class="tag-options"></div></details>
+              <div class="filter-fields">
+                <label class="checkbox-label"><input id="free-only" type="checkbox"><span>Free events only</span></label>
+                <label class="checkbox-label"><input id="followed-only" type="checkbox"><span>Only accounts I follow</span></label>
+                <label class="horizon-label" for="horizon-days">Look ahead <span><input id="horizon-days" type="number" min="1" max="90" step="1" value="30" required> days</span></label>
+              </div>
+              <button id="save-preferences" class="button primary" type="submit">Save preferences</button>
+              <p class="help-text save-note">Unknown admission is excluded by “free events only.”</p>
+            </form>
+          </section>
+        </details>
+        <div id="status" class="status-message" role="status" aria-live="polite">Loading your feed…</div>
+        <div id="error" class="error-message" role="alert" hidden></div>
+        <div id="warnings" class="warning-message" role="status" hidden></div>
+        <section id="feed" class="feed-area" aria-label="Your campus feed" tabindex="-1">
+          <div class="feed-toolbar"><div class="view-tabs" role="tablist" aria-label="Feed view">
+            <button id="events-tab" class="view-tab active" role="tab" aria-selected="true" aria-controls="events-panel" type="button" data-view="events">Events</button>
+            <button id="newsletter-tab" class="view-tab" role="tab" aria-selected="false" aria-controls="newsletter-panel" tabindex="-1" type="button" data-view="newsletter">Newsletter</button>
+            <button id="calendar-tab" class="view-tab" role="tab" aria-selected="false" aria-controls="calendar-panel" tabindex="-1" type="button" data-view="calendar">Calendar</button>
+          </div></div>
+          <div id="events-panel" class="view-panel" role="tabpanel" aria-labelledby="events-tab">
+            <div class="feed-heading"><h2>Upcoming events <span id="event-count" class="count">0</span></h2><span id="feed-updated"></span></div>
+            <form id="search-form" class="search-form" role="search">
+              <label class="visually-hidden" for="event-query">Search upcoming events</label>
+              <div class="search-input"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/></svg><input id="event-query" type="search" placeholder="Find a workshop, topic, or club…" maxlength="500" autocomplete="off"></div>
+              <button id="search-button" class="button secondary" type="submit">Find events</button>
+            </form>
+            <p id="feed-description" class="feed-caption">Upcoming events, picked for you.</p>
+            <div id="event-list" class="event-list" aria-live="polite"><div class="empty-state"><h3>Loading upcoming events…</h3><p>Your feed will appear here.</p></div></div>
+          </div>
+          <div id="newsletter-panel" class="view-panel" role="tabpanel" aria-labelledby="newsletter-tab" hidden>
+            <div class="panel-intro"><h2>Your newsletter</h2><p>The latest posts from the accounts you follow.</p></div>
+            <div id="newsletter-summary" class="newsletter-summary" hidden></div>
+            <div id="newsletter" class="newsletter-list"><div class="empty-state"><h3>Loading recent posts…</h3></div></div>
+          </div>
+          <div id="calendar-panel" class="view-panel" role="tabpanel" aria-labelledby="calendar-tab" hidden>
+            <div class="panel-intro"><h2>Your event calendar</h2><p>Events with a known date. Times are shown in the event’s local time.</p></div>
+            <div id="calendar"></div><p id="calendar-fallback" class="help-text" hidden>The calendar could not load. Your upcoming events are available in the event list.</p>
+          </div>
+        </section>
+        <footer class="paper-footer"><button id="refresh-button" class="button primary" type="button"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 6.6M20 4v7h-7"/></svg><span>Refresh posts</span></button><span>Stay curious. Show up.</span></footer>
+      </div>
+    </div>
+  </main>
 </body>
 </html>
